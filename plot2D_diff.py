@@ -40,10 +40,42 @@ def ReadDataFromFile(file, DIM_N, DIM_Z):
     return data_array
 
 
+def load_reference_isotopes(path):
+    # create list of isotopes:
+    list_of_isotopes = []
 
-def CompareTimeSeries(path1, path2, path_out, delta_TS, output_range, threshold):
+    # open file:
+    with open(path, 'r') as f:
+        for line in f:
+            # split line into tokens:
+            tokens = line.split()
+
+            # We expect lines to be of the format
+            # Z name A abundance
+
+            if len(tokens) < 4:
+                print("Error: Invalid line in reference_isotopes file:",line)
+                continue
+
+            # parse tokens:
+            Z = int(tokens[0])
+            name = tokens[1]
+            A = int(tokens[2])
+            abundance = float(tokens[3])
+
+            N = A - Z
+
+            # add to list:
+            list_of_isotopes.append( (Z, N, name, abundance) )
+
+    return list_of_isotopes
+
+
+def CompareTimeSeries(path1, path2, reference_isotopes, path_out, delta_TS, output_range, threshold, DIM_N_limit, DIM_Z_limit):
     global max_diff
     global min_diff
+
+    list_of_isotopes = load_reference_isotopes(reference_isotopes)
 
     # load both files, format is the same as the write format (first header with dimensions, then data)
     # Data is structured in blocks, each block has a timestep and a 2D array of abundances. For simplicity we assume that the dimensions are the same for both files (120x120),
@@ -91,12 +123,18 @@ def CompareTimeSeries(path1, path2, path_out, delta_TS, output_range, threshold)
     print("File 1: Read",len(data1),"timesteps.")
     print("File 2: Read",len(data2),"timesteps.")
 
+    DIM_N1 = min(DIM_N1, DIM_N_limit)
+    DIM_Z1 = min(DIM_Z1, DIM_Z_limit)
+
     # Create mesh grid with dimensions DIM_N x DIM_Z
     A, Z = np.meshgrid(range(DIM_N1), range(DIM_Z1))
 
     # For time tracking: get current time
     import time
     start_time = time.time()
+
+    magic_numbers_protons  = [2, 8, 20, 28, 50, 82]
+    magic_numbers_neutrons = [2, 8, 20, 28, 50, 82, 126] 
 
     rendered_entries = 0
 
@@ -126,6 +164,9 @@ def CompareTimeSeries(path1, path2, path_out, delta_TS, output_range, threshold)
                 data_y_2d_diff = data_y_2d_2 - data_y_2d_1
                 # data_y_2d_diff = np.ma.masked_array(data_y_2d_diff, abs(data_y_2d_diff) < 0.0001)
 
+                # cut data_y_2d_diff to be of proper size:
+                data_y_2d_diff = data_y_2d_diff[:DIM_Z1, :DIM_N1]
+
                 current_max = np.amax(data_y_2d_diff)
                 current_min = np.amin(data_y_2d_diff)
 
@@ -147,11 +188,24 @@ def CompareTimeSeries(path1, path2, path_out, delta_TS, output_range, threshold)
                 # save plot, write timestep padded with zeroes:
                 save_name = path_out+'/diff_'+str(timestep1).zfill(5)+'.png'
 
+                # draw a rectangle around the reference isotopes: PROBLEM
+                for isotope in list_of_isotopes:
+                    # isotope = (Z, N, name, abundance)
+                    isoZ = isotope[0]
+                    isoN = isotope[1]
+                    plt.gca().add_patch(plt.Rectangle((isoN-0.5, isoZ-0.5), 1, 1, fill=False, facecolor='none', edgecolor='gray', lw=0.15))
+
+                # draw lines at shell closures:
+                for magic_number in magic_numbers_protons:
+                    plt.axhline(y=magic_number-0.5, color='gray', lw=0.15)
+                for magic_number in magic_numbers_neutrons:
+                    plt.axvline(x=magic_number-0.5, color='gray', lw=0.15)
+
                 # add timestamp to plot (aligned to left side, top)
                 plt.text(0.01, 0.99, "timestep: "+str(timestep1)+"\nmax diff: "+str(round(max_diff, 4))+"\nmin diff: "+str(round(min_diff, 4)), horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)
 
                 # print("Saving",save_name)
-                plt.savefig(save_name)
+                plt.savefig(save_name, dpi=280)
                 plt.clf()
 
                 rendered_entries += 1
@@ -187,11 +241,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Compare two time series files.')
     parser.add_argument('path1', metavar='path1', type=str, nargs=1, help='path to first file')
     parser.add_argument('path2', metavar='path2', type=str, nargs=1, help='path to second file')
+    parser.add_argument('reference_isotopes', metavar='reference_isotopes', type=str, nargs=1, help='path to reference_isotopes file')
     parser.add_argument('output_paths', metavar='output_paths', type=str, nargs=1, help='path to output directory')
     parser.add_argument('delta_TS', metavar='delta_TS', type=float, nargs=1, help='temporal offset between files')
     parser.add_argument('output_range', metavar='output_range', type=float, nargs=1, help='output range')
     parser.add_argument('threshold', metavar='threshold', type=float, nargs=1, help='deviation needs to exceed threshold to be plotted')
+    parser.add_argument('DIM_Z_limit', metavar='DIM_Z_limit', type=int, nargs=1, help='limit for DIM_Z')
+    parser.add_argument('DIM_N_limit', metavar='DIM_N_limit', type=int, nargs=1, help='limit for DIM_N')
     args = parser.parse_args()
 
     # call function:
-    CompareTimeSeries(args.path1[0], args.path2[0], args.output_paths[0], args.delta_TS[0], args.output_range[0], args.threshold[0])
+    CompareTimeSeries(args.path1[0], args.path2[0], args.reference_isotopes[0], args.output_paths[0], args.delta_TS[0], args.output_range[0], args.threshold[0], args.DIM_N_limit[0], args.DIM_Z_limit[0])
