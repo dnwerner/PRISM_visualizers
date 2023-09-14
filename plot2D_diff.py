@@ -41,7 +41,7 @@ def ReadDataFromFile(file, DIM_N, DIM_Z):
 
 
 
-def CompareTimeSeries(path1, path2, delta_TS, output_range, threshold):
+def CompareTimeSeries(path1, path2, path_out, delta_TS, output_range, threshold):
     global max_diff
     global min_diff
 
@@ -50,8 +50,8 @@ def CompareTimeSeries(path1, path2, delta_TS, output_range, threshold):
     # but we will still read the dimensions from the header to make sure and break if they are not the same.
 
     # create output directory (if it does not exist yet):
-    if not os.path.exists('diff2'):
-        os.makedirs('diff2')
+    if not os.path.exists(path_out):
+        os.makedirs(path_out)
 
     # open file 1:
     try:
@@ -126,17 +126,15 @@ def CompareTimeSeries(path1, path2, delta_TS, output_range, threshold):
                 data_y_2d_diff = data_y_2d_2 - data_y_2d_1
                 # data_y_2d_diff = np.ma.masked_array(data_y_2d_diff, abs(data_y_2d_diff) < 0.0001)
 
-                max_diff = max(max_diff, np.amax(data_y_2d_diff))
-                min_diff = min(min_diff, np.amin(data_y_2d_diff))
+                current_max = np.amax(data_y_2d_diff)
+                current_min = np.amin(data_y_2d_diff)
+
+                max_diff = max(max_diff, current_max)
+                min_diff = min(min_diff, current_min)
 
                 # only plot if diff exceeds threshold in either direction:
-                if max_diff < threshold and min_diff > -threshold:
+                if current_max < threshold and current_min > -threshold:
                     break
-
-                # debug output of value at (1,1):
-                # print("timestep1:",timestep1,"timestep2:",timestep2,"data_y_2d_diff[1,1]:",data_y_2d_diff[1,1])
-                # print("data_y_2d_1[1,1]:",data_y_2d_1[1,1])
-                # print("data_y_2d_2[1,1]:",data_y_2d_2[1,1])
                 
                 # plot using data_y_2d_diff with fire color scale
                 plt.pcolormesh(A, Z, data_y_2d_diff, vmin=-output_range, vmax=output_range, cmap='seismic') #RdBu
@@ -147,11 +145,10 @@ def CompareTimeSeries(path1, path2, delta_TS, output_range, threshold):
                 plt.ylabel("Z")
 
                 # save plot, write timestep padded with zeroes:
-                save_name = 'diff2/diff_'+str(timestep1).zfill(5)+'.png'
+                save_name = path_out+'/diff_'+str(timestep1).zfill(5)+'.png'
 
                 # add timestamp to plot (aligned to left side, top)
                 plt.text(0.01, 0.99, "timestep: "+str(timestep1)+"\nmax diff: "+str(round(max_diff, 4))+"\nmin diff: "+str(round(min_diff, 4)), horizontalalignment='left', verticalalignment='top', transform=plt.gca().transAxes)
-                # plt.text(0.01, 0.01, "timestep: "+str(timestep1)+"\nmax diff: "+str(round(max_diff, 4))+"\nmin diff: "+str(round(min_diff, 4)), horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes)
 
                 # print("Saving",save_name)
                 plt.savefig(save_name)
@@ -167,15 +164,14 @@ def CompareTimeSeries(path1, path2, delta_TS, output_range, threshold):
         time_elapsed_string = "(elapsed: "+str(round(time.time() - start_time, 0))+"s"
 
         # total without unrendered entries:
-        total_data = len(data1) - (i - rendered_entries)
+        total_render_count = len(data1) - (i - rendered_entries)
 
         time_remaining_string = ""
         if rendered_entries > 20:
-            time_remaining_time = time_elapsed_time * (total_data - 1) / (rendered_entries + 1)
+            time_remaining_time = ((total_render_count/rendered_entries)-1)*time_elapsed_time
             time_remaining_string = ", remaining: "+str(round(time_remaining_time, 0))+"s"
 
-        print("Progress: ",i+1,"/",len(data1),"difference=",min_diff,",",max_diff,time_elapsed_string,time_remaining_string,")        ",end='\r', flush=True)
-#        print("Progress: ",i+1,"/",len(data1),end='\r')
+        print("Progress: ",i+1,"/",len(data1),time_elapsed_string,time_remaining_string,")      Currend diff.= (",current_min,",",current_max,")                ",end='\r', flush=True)
 
     # close files:
     f1.close()
@@ -191,10 +187,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Compare two time series files.')
     parser.add_argument('path1', metavar='path1', type=str, nargs=1, help='path to first file')
     parser.add_argument('path2', metavar='path2', type=str, nargs=1, help='path to second file')
+    parser.add_argument('output_paths', metavar='output_paths', type=str, nargs=1, help='path to output directory')
     parser.add_argument('delta_TS', metavar='delta_TS', type=float, nargs=1, help='temporal offset between files')
     parser.add_argument('output_range', metavar='output_range', type=float, nargs=1, help='output range')
     parser.add_argument('threshold', metavar='threshold', type=float, nargs=1, help='deviation needs to exceed threshold to be plotted')
     args = parser.parse_args()
 
     # call function:
-    CompareTimeSeries(args.path1[0], args.path2[0], args.delta_TS[0], args.output_range[0], args.threshold[0])
+    CompareTimeSeries(args.path1[0], args.path2[0], args.output_paths[0], args.delta_TS[0], args.output_range[0], args.threshold[0])
